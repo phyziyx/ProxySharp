@@ -1,6 +1,7 @@
-
-using Microsoft.AspNetCore.Authentication.OAuth;
+using ProxySharp.Middleware;
 using ProxySharp.Services;
+using Serilog;
+using System.Threading.RateLimiting;
 
 namespace ProxySharp;
 
@@ -10,16 +11,38 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        // Add services to the container.
+        // Configure Serilog
+        Log.Logger = new LoggerConfiguration()
+            .ReadFrom.Configuration(builder.Configuration)
+            .Enrich.FromLogContext()
+            .Enrich.WithMachineName()
+            .Enrich.WithEnvironmentName()
+            .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {CorrelationId} {Message:lj}{NewLine}{Exception}")
+            .WriteTo.File(
+                path: "logs/proxysharp-.txt",
+                rollingInterval: RollingInterval.Day,
+                outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {CorrelationId} {Message:lj}{NewLine}{Exception}")
+            .CreateLogger();
+
+        builder.Host.UseSerilog();
+
+        // Add configuration from appsettings.json to our configuration class with validation
+        builder.Services.AddOptions<Models.Configuration>()
+            .Bind(builder.Configuration)
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        // Add services to the container
         builder.Services.AddSingleton<TokenStore>();
         builder.Services.AddSingleton<ITokenService, TokenService>();
         builder.Services.AddScoped<AuthHandler>();
 
+        // Configure HttpClient for authentication and API calls
         builder.Services.AddHttpClient("AuthClient")
             .ConfigureHttpClient(client =>
             {
-                client.BaseAddress = new Uri(builder.Configuration["BASE_URL"]);
-                client.Timeout = TimeSpan.FromSeconds(30);
+                client.BaseAddress = new Uri(builder.Configuration["ApiUrl"]!);
+                client.Timeout = TimeSpan.FromSeconds(Convert.ToDouble(builder.Configuration["AuthTimeout"]));
                 client.DefaultRequestHeaders.Add("Accept", "application/json");
             });
 
@@ -31,7 +54,56 @@ public class Program
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
 
+        // Configure rate limiting
+        builder.Services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+            // Fixed window rate limiter: 60 requests per minute per IP
+            options.AddPolicy("fixed", httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: partition => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 60,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 10
+                    }));
+
+            // Sliding window rate limiter for stricter control
+            options.AddPolicy("sliding", httpContext =>
+                RateLimitPartition.GetSlidingWindowLimiter(
+                    partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: partition => new SlidingWindowRateLimiterOptions
+                    {
+                        PermitLimit = 50,
+                        Window = TimeSpan.FromMinutes(1),
+                        SegmentsPerWindow = 4,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 5
+                    }));
+
+            // Global rate limiter
+            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: partition => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 200,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 20
+                    }));
+        });
+
         var app = builder.Build();
+
+        // Add correlation ID middleware to ensure all logs have a correlation ID for better traceability
+        app.UseCorrelationMiddleware();
+
+        // [added for testing] Add HTTP logging middleware to log incoming requests and outgoing responses
+        app.UseHttpLogging();
 
         // Configure the HTTP request pipeline.
         if (app.Environment.IsDevelopment())
@@ -42,8 +114,11 @@ public class Program
 
         app.UseHttpsRedirection();
 
-        app.UseAuthorization();
+        // Add rate limiting to all requests - we do not want bad actors to overload our API or cause performance issues
+        // This also helps us detect if consumers of our API are behaving incorrectly by exceeding appropriate limits
+        app.UseRateLimiter();
 
+        app.UseAuthorization();
 
         app.MapControllers();
 

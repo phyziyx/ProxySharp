@@ -32,18 +32,11 @@ public class TokenResponse
     public int? ResCode { get; set; }
 }
 
-public class TokenService : ITokenService
+public class TokenService(IHttpClientFactory factory, ILogger<TokenService> logger, IConfiguration configuration) : ITokenService
 {
-    private readonly ILogger<TokenService> _logger;
-    private readonly IHttpClientFactory _factory;
-    private readonly IConfiguration _configuration;
-
-    public TokenService(IHttpClientFactory factory, ILogger<TokenService> logger, IConfiguration configuration)
-    {
-        _factory = factory;
-        _logger = logger;
-        _configuration = configuration;
-    }
+    private readonly ILogger<TokenService> _logger = logger;
+    private readonly IHttpClientFactory _factory = factory;
+    private readonly IConfiguration _configuration = configuration;
 
     public async Task<(string token, DateTime expires)> RequestNewTokenAsync()
     {

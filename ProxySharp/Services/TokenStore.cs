@@ -9,6 +9,13 @@ public class TokenStore
     private DateTime _expiresAt = DateTime.MinValue;
     // Constants
     private static readonly TimeSpan GRACE_PERIOD = TimeSpan.FromSeconds(60);
+    // Logger
+    private readonly ILogger<TokenStore> _logger;
+
+    public TokenStore(ILogger<TokenStore> logger)
+    {
+        _logger = logger;
+    }
 
     /// <summary>
     /// Returns a valid token, refreshing it if missing or about to expire.
@@ -16,26 +23,34 @@ public class TokenStore
     public async Task<string> GetOrRefreshTokenAsync(Func<Task<(string token, DateTime expires)>> refreshFunc)
     {
         // If missing or within the grace window, refresh
-        if (string.IsNullOrEmpty(_token) || DateTime.UtcNow >= _expiresAt - GRACE_PERIOD)
+        if (!string.IsNullOrEmpty(_token) && DateTime.UtcNow < _expiresAt - GRACE_PERIOD)
         {
-            await _lock.WaitAsync();
-            try
-            {
-                // Recheck inside lock (double-check locking)
-                if (string.IsNullOrEmpty(_token) || DateTime.UtcNow >= _expiresAt - GRACE_PERIOD)
-                {
-                    var (newToken, newExpiry) = await refreshFunc();
-                    _token = newToken;
-                    _expiresAt = newExpiry;
-                }
-            }
-            finally
-            {
-                _lock.Release();
-            }
+            _logger.LogInformation("Token is valid, returning existing token.");
+            return _token!;
         }
 
-        return _token!;
+        // Acquire lock to refresh token, if needed
+        _logger.LogInformation("Acquiring lock...");
+        await _lock.WaitAsync();
+        try
+        {
+            // Recheck inside lock (double-check locking)
+            if (!string.IsNullOrEmpty(_token) && DateTime.UtcNow < _expiresAt - GRACE_PERIOD)
+            {
+                return _token!;
+            }
+
+            // Refresh the token using the injected refresh function
+            var (newToken, newExpiry) = await refreshFunc();
+            _token = newToken;
+            _expiresAt = newExpiry;
+
+            return _token!;
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     public async Task ForceUpdateAsync(string token, DateTime expires)

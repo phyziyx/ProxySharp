@@ -19,14 +19,14 @@ public class TestServiceClient
     {
         _httpClient = httpClient;
 
-        string? baseUrl = configuration["BASE_URL"];
+        string? baseUrl = configuration["ApiUrl"];
         if (null == baseUrl)
         {
-            throw new NullReferenceException("BASE_URL is not configured in appsettings.json");
+            throw new NullReferenceException("ApiUrl is not configured in appsettings.json");
         }
 
         _httpClient.BaseAddress = new Uri(baseUrl);
-        _httpClient.Timeout = TimeSpan.FromSeconds(60);
+        _httpClient.Timeout = TimeSpan.FromSeconds(Double.Parse(configuration["RequestTimeout"]));
         _httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
 
         jsonOptions = new JsonSerializerOptions
