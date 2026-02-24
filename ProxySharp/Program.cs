@@ -1,3 +1,4 @@
+using ProxySharp.Infrastructure.Http;
 using ProxySharp.Middleware;
 using ProxySharp.Services;
 using Serilog;
@@ -37,16 +38,33 @@ public class Program
         builder.Services.AddSingleton<ITokenService, TokenService>();
         builder.Services.AddScoped<AuthHandler>();
 
-        // Configure HttpClient for authentication and API calls
+        // According to:
+        // (1) http://milanjovanovic.tech/blog/the-right-way-to-use-httpclient-in-dotnet
+        // (2) https://learn.microsoft.com/en-us/dotnet/core/extensions/httpclient-factory-troubleshooting?source=recommendations#typed-client-has-the-wrong-httpclient-injected
+        //
+        // Typed clients also use named clients under the hood with a caveat (it also registers
+        // a Transient service using the TClient or TClient,TImplementation provided).
+        //
+        // The difference is that we do not need to specify the name when creating the client
+        // Which is more convenient, especially when we have multiple clients with different configs.
+
+        // Configure a named HttpClient for authentication
         builder.Services.AddHttpClient("AuthClient")
             .ConfigureHttpClient(client =>
             {
                 client.BaseAddress = new Uri(builder.Configuration["ApiUrl"]!);
                 client.Timeout = TimeSpan.FromSeconds(Convert.ToDouble(builder.Configuration["AuthTimeout"]));
                 client.DefaultRequestHeaders.Add("Accept", "application/json");
-            });
+            })
+            .ConfigurePrimaryHttpMessageHandler(() =>
+                HttpClientProxyFactory.CreateProxyHandler(builder.Configuration)
+            );
 
+        // Configure a typed HttpClient for our service
         builder.Services.AddHttpClient<TestServiceClient>()
+            .ConfigurePrimaryHttpMessageHandler(() =>
+                HttpClientProxyFactory.CreateProxyHandler(builder.Configuration)
+            )
             .AddHttpMessageHandler<AuthHandler>();
 
         builder.Services.AddControllers();
