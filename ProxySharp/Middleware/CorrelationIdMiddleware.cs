@@ -46,9 +46,9 @@ public class CorrelationIdMiddleware : IMiddleware
 // as it abstracts away the implementation details and provides a more intuitive API for adding the middleware to the pipeline.
 public static class CorrelationIdMiddlewareExtensions
 {
-    public static IApplicationBuilder UseCorrelationMiddleware(
+    public static void UseCorrelationMiddleware(
         this IApplicationBuilder builder)
     {
-        return builder.UseMiddleware<CorrelationIdMiddleware>();
+        builder.UseMiddleware<CorrelationIdMiddleware>();
     }
 }
