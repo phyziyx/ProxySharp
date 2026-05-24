@@ -39,10 +39,12 @@ public class TokenService(IHttpClientFactory factory, ILogger<TokenService> logg
         
         var client = factory.CreateClient("AuthClient");
 
-        var username = configuration.GetValue<string>("API_USERNAME");
-        var password = configuration.GetValue<string>("API_PASSWORD");
+        var username = configuration.GetValue<string>("authUsername");
+        var password = configuration.GetValue<string>("authPassword");
 
-        var response = await client.PostAsJsonAsync("Users/authenticate", new TokenRequest
+        var authEndpoint = configuration.GetValue<string>("authEndpoint");
+
+        var response = await client.PostAsJsonAsync(authEndpoint, new TokenRequest
         {
             Username = username,
             Password = password
@@ -54,14 +56,14 @@ public class TokenService(IHttpClientFactory factory, ILogger<TokenService> logg
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync<TokenResponse>();
-        if (null == result)
+        if (result is null)
         {
             return (string.Empty, DateTime.MinValue);
         }
 
-        int expiresIn = result.ExpiresIn ?? 0;
+        int expiresIn = result.ExpiresIn ?? DateTime.MinValue;
         string token = result.Token ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(token) || expiresIn <= 0)
+        if (string.IsNullOrWhiteSpace(token) || expiresIn <= DateTime.MinValue)
         {
             return (string.Empty, DateTime.MinValue);
         }

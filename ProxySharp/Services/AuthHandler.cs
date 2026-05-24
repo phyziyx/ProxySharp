@@ -5,7 +5,7 @@ public class AuthHandler(TokenStore tokenStore, ITokenService tokenService, ILog
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         // Get the current (or new) token
-        var token = await tokenStore.GetOrRefreshTokenAsync(tokenService.RequestNewTokenAsync);
+        var token = await tokenStore.GetOrRefreshTokenAsync(tokenService.RequestNewTokenAsync, cancellationToken);
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
         var response = await base.SendAsync(request, cancellationToken);
@@ -16,7 +16,7 @@ public class AuthHandler(TokenStore tokenStore, ITokenService tokenService, ILog
             logger.LogWarning("Received 401, refreshing token and retrying...");
 
             var (newToken, expires) = await tokenService.RequestNewTokenAsync();
-            await tokenStore.ForceUpdateAsync(newToken, expires);
+            await tokenStore.ForceUpdateAsync(newToken, expires, cancellationToken);
 
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", newToken);
 
@@ -26,4 +26,3 @@ public class AuthHandler(TokenStore tokenStore, ITokenService tokenService, ILog
         return response;
     }
 }
-

@@ -20,8 +20,10 @@ public class TokenStore
     /// <summary>
     /// Returns a valid token, refreshing it if missing or about to expire.
     /// </summary>
-    public async Task<string> GetOrRefreshTokenAsync(Func<Task<(string token, DateTime expires)>> refreshFunc)
+    public async Task<string> GetOrRefreshTokenAsync(Func<Task<(string token, DateTime expires)>> refreshFunc, CancellationToken ct)
     {
+        bool lockTaken = false;
+
         // If missing or within the grace window, refresh
         if (!string.IsNullOrEmpty(_token) && DateTime.UtcNow < _expiresAt - GRACE_PERIOD)
         {
@@ -31,9 +33,12 @@ public class TokenStore
 
         // Acquire lock to refresh token, if needed
         _logger.LogInformation("Acquiring lock...");
-        await _lock.WaitAsync();
         try
         {
+            // SemaphoreSlim will return a boolean depending whether the lock has been acquired or not.
+            // This is useful if the lock has not been acquired.
+            lockTaken = await _lock.WaitAsync(ct);
+
             // Recheck inside lock (double-check locking)
             if (!string.IsNullOrEmpty(_token) && DateTime.UtcNow < _expiresAt - GRACE_PERIOD)
             {
@@ -49,21 +54,31 @@ public class TokenStore
         }
         finally
         {
-            _lock.Release();
+            // Only release the lock if acquired earlier.
+            if (lockTaken)
+            {
+                _lock.Release();
+            }
         }
     }
 
-    public async Task ForceUpdateAsync(string token, DateTime expires)
+    public async Task ForceUpdateAsync(string token, DateTime expires, CancellationToken ct)
     {
-        await _lock.WaitAsync();
+        bool lockTaken = false;
+
         try
         {
+            lockTaken = await _lock.WaitAsync(ct);
+
             _token = token;
             _expiresAt = expires;
         }
         finally
         {
-            _lock.Release();
+            if (lockTaken)
+            {
+                _lock.Release();
+            }
         }
     }
 
