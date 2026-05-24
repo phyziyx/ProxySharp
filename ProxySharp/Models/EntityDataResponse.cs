@@ -14,7 +14,7 @@ public class GeneralResponse
 public class EntityDataResponse : GeneralResponse
 {
     [JsonPropertyName("EntityInfo")]
-    public string EntityInfo { get; set; }
+    public required string EntityInfo { get; set; }
 
     [JsonPropertyName("Amount")]
     public decimal Amount { get; set; }

@@ -10,10 +10,10 @@ public interface ITokenService
 public class TokenRequest
 {
     [JsonPropertyName("Username")]
-    public string Username { get; set; }
+    public required string Username { get; set; }
 
     [JsonPropertyName("Password")]
-    public string Password { get; set; }
+    public required string Password { get; set; }
 }
 
 public class TokenResponse
@@ -39,8 +39,8 @@ public class TokenService(IHttpClientFactory factory, ILogger<TokenService> logg
         
         var client = factory.CreateClient("AuthClient");
 
-        var username = configuration.GetValue<string>("authUsername");
-        var password = configuration.GetValue<string>("authPassword");
+        var username = configuration.GetValue<string>("authUsername")!;
+        var password = configuration.GetValue<string>("authPassword")!;
 
         var authEndpoint = configuration.GetValue<string>("authEndpoint");
 
@@ -50,9 +50,6 @@ public class TokenService(IHttpClientFactory factory, ILogger<TokenService> logg
             Password = password
         });
 
-        // Print out the response
-        Console.WriteLine("Content: " + await response.Content.ReadAsStringAsync());
-
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync<TokenResponse>();
@@ -61,9 +58,9 @@ public class TokenService(IHttpClientFactory factory, ILogger<TokenService> logg
             return (string.Empty, DateTime.MinValue);
         }
 
-        int expiresIn = result.ExpiresIn ?? DateTime.MinValue;
+        int expiresIn = result.ExpiresIn ?? 0;
         string token = result.Token ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(token) || expiresIn <= DateTime.MinValue)
+        if (string.IsNullOrWhiteSpace(token) || expiresIn <= 0)
         {
             return (string.Empty, DateTime.MinValue);
         }

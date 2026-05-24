@@ -26,7 +26,7 @@ public class TestServiceClient
         }
 
         _httpClient.BaseAddress = new Uri(baseUrl);
-        _httpClient.Timeout = TimeSpan.FromSeconds(Double.Parse(configuration["RequestTimeout"]));
+        _httpClient.Timeout = TimeSpan.FromSeconds(double.Parse(configuration["requestTimeout"]!));
         _httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
 
         jsonOptions = new JsonSerializerOptions
@@ -37,17 +37,19 @@ public class TestServiceClient
 
     private string NormaliseEndpoint(string endpoint)
     {
-        if (endpoint.StartsWith("/"))
+        if (!endpoint.StartsWith("/"))
         {
-            endpoint = endpoint.Substring(1);
+            return endpoint;
         }
+
+        endpoint = endpoint[1..];
         return endpoint;
     }
 
     private Uri BuildUri(string endpoint)
     {
         var normalised = NormaliseEndpoint(endpoint);
-        return new Uri(_httpClient.BaseAddress, normalised);
+        return new Uri(_httpClient.BaseAddress!, normalised);
     }
 
     public async Task<ClientResult<T>> GetAsync<T>(string endpoint)
